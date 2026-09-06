@@ -1,4 +1,5 @@
-from fastapi import FastAPI
+import fitz
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 
@@ -16,3 +17,28 @@ app.add_middleware(
 @app.get("/")
 def health_check() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.post("/upload")
+async def upload_pdf(file: UploadFile = File(...)) -> dict[str, object]:
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=415, detail="Only PDF files are accepted.")
+
+    pdf_bytes = await file.read()
+
+    try:
+        document = fitz.open(stream=pdf_bytes, filetype="pdf")
+    except fitz.FileDataError as error:
+        raise HTTPException(
+            status_code=400, detail="The uploaded file is not a valid PDF."
+        ) from error
+
+    try:
+        pages = [
+            {"page": page_number, "text": page.get_text()}
+            for page_number, page in enumerate(document, start=1)
+        ]
+    finally:
+        document.close()
+
+    return {"filename": file.filename, "pages": pages}
